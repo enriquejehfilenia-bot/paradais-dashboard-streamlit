@@ -612,7 +612,6 @@ _PLOT_LAYOUT = dict(
     plot_bgcolor="#FFFFFF",
     font=dict(family="Inter, Arial, sans-serif", color="#1C1917", size=12),
     margin=dict(l=0, r=0, t=10, b=0),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
     xaxis=dict(showgrid=True, gridcolor="#F5F5F4", zeroline=False,
                tickfont=dict(size=11, color="#78716C")),
     yaxis=dict(showgrid=True, gridcolor="#F5F5F4", zeroline=False,
@@ -925,7 +924,7 @@ def render_dashboard(df: pd.DataFrame):
                 hovertemplate="<b>%{y}</b><br>%{x:$,.0f}<extra></extra>",
             ))
             fig_c.update_layout(
-                **_PLOT_LAYOUT,
+                **{k: v for k, v in _PLOT_LAYOUT.items() if k not in ("xaxis", "yaxis")},
                 height=max(280, len(top10) * 34),
                 yaxis=dict(tickfont=dict(size=10, color="#1C1917"),
                            showgrid=False, zeroline=False),
