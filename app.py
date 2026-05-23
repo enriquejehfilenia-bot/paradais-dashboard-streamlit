@@ -67,13 +67,14 @@ st.markdown("""
     margin-bottom: 1.4rem;
 }
 .ddb-logo {
-    width: 44px; height: 44px;
-    background: #1C1917;
+    width: 48px; height: 48px;
+    background: #000000;
     border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
+    overflow: hidden;
 }
-.ddb-logo svg { width: 26px; height: 26px; }
+.ddb-logo svg { width: 48px; height: 48px; }
 .ddb-title {
     font-family: Georgia, 'Times New Roman', serif;
     font-size: 1.55rem;
@@ -213,7 +214,50 @@ st.markdown("""
     border-right: 1px solid #E7E5E4;
 }
 [data-testid="stSidebar"] * { color: #1C1917 !important; }
-[data-testid="stSidebar"] .stSelectbox label { font-size: 0.8rem !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stMultiSelect label { font-size: 0.8rem !important; }
+
+/* ── Selectbox / Multiselect — texto siempre visible ────────────────────── */
+/* Contenedor seleccionado */
+[data-baseweb="select"] > div:first-child,
+[data-baseweb="select"] [data-testid="stSelectboxVirtualDropdown"],
+[data-baseweb="select"] input,
+[data-baseweb="select"] span,
+[data-baseweb="select"] div[class*="ValueContainer"] > div,
+[data-baseweb="select"] div[class*="singleValue"],
+[data-baseweb="select"] div[class*="placeholder"] {
+    color: #1C1917 !important;
+    background-color: #FFFFFF !important;
+}
+/* Caja exterior del select */
+[data-baseweb="select"] > div {
+    background-color: #FFFFFF !important;
+    border-color: #E7E5E4 !important;
+}
+/* Opciones del dropdown */
+[data-baseweb="popover"] li,
+[data-baseweb="menu"] li,
+[data-baseweb="menu"] [role="option"],
+ul[data-testid="stSelectboxVirtualDropdown"] li {
+    color: #1C1917 !important;
+    background-color: #FFFFFF !important;
+}
+[data-baseweb="menu"] [role="option"]:hover,
+[data-baseweb="menu"] [aria-selected="true"] {
+    background-color: #FEF9EC !important;
+    color: #1C1917 !important;
+}
+/* Multiselect tags */
+[data-baseweb="tag"] {
+    background-color: #FEF3C7 !important;
+    color: #92400E !important;
+}
+[data-baseweb="tag"] span { color: #92400E !important; }
+/* Input dentro del multiselect */
+[data-baseweb="select"] input { color: #1C1917 !important; }
+/* Label general de widgets */
+.stSelectbox label, .stMultiSelect label,
+[data-testid="stWidgetLabel"] { color: #1C1917 !important; }
 
 /* ── Botones ─────────────────────────────────────────────────────────────── */
 .stButton > button {
@@ -703,9 +747,14 @@ def render_dashboard(df: pd.DataFrame):
     st.markdown(
         '<div class="ddb-header">'
         '<div class="ddb-logo">'
-        '<svg viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">'
-        '<text x="3" y="20" font-family="Georgia,serif" font-size="16" '
-        'font-weight="700" fill="#EAB308">PD</text></svg>'
+        '<svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<!-- B superior -->'
+        '<rect x="10" y="7" width="6" height="13" rx="1" fill="#EAB308"/>'
+        '<path d="M16 7 H22 Q28 7 28 13.5 Q28 20 22 20 H16 Z" fill="#EAB308"/>'
+        '<!-- B inferior -->'
+        '<rect x="10" y="22" width="6" height="15" rx="1" fill="#EAB308"/>'
+        '<path d="M16 22 H23 Q30 22 30 29.5 Q30 37 23 37 H16 Z" fill="#EAB308"/>'
+        '</svg>'
         '</div>'
         '<div>'
         '<div class="ddb-title">Ventas &amp; Costos</div>'
