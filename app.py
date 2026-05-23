@@ -260,19 +260,27 @@ ul[data-testid="stSelectboxVirtualDropdown"] li {
 [data-testid="stWidgetLabel"] { color: #1C1917 !important; }
 
 /* ── Botones ─────────────────────────────────────────────────────────────── */
+/* Botón normal (Cargar nuevo archivo) → oscuro/primario */
 .stButton > button {
     border-radius: 8px;
     font-weight: 600;
-    border: 1px solid #E7E5E4 !important;
-    color: #1C1917 !important;
-    background: #FFFFFF !important;
-}
-.stDownloadButton > button {
     background: #1C1917 !important;
     color: #FFFFFF !important;
     border: none !important;
+}
+.stButton > button:hover {
+    background: #292524 !important;
+}
+/* Botón descarga (Descargar Excel) → claro con borde dorado */
+.stDownloadButton > button {
+    background: #FFFFFF !important;
+    color: #1C1917 !important;
+    border: 1.5px solid #EAB308 !important;
     border-radius: 8px;
     font-weight: 600;
+}
+.stDownloadButton > button:hover {
+    background: #FEFCE8 !important;
 }
 
 /* ── Responsive móvil ────────────────────────────────────────────────────── */
@@ -288,33 +296,41 @@ ul[data-testid="stSelectboxVirtualDropdown"] li {
 }
 
 /* ── Date input — mismo estilo que selectbox ────────────────────────────── */
-[data-testid="stDateInput"] input,
+[data-testid="stDateInput"],
+[data-testid="stDateInput"] *,
+[data-testid="stDateInput"] > div,
 [data-testid="stDateInput"] > div > div,
-[data-baseweb="input"] input,
-[data-baseweb="calendar"] {
+[data-testid="stDateInput"] input {
     background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
     color: #1C1917 !important;
     border-color: #E7E5E4 !important;
 }
-[data-baseweb="input"] {
-    background-color: #FFFFFF !important;
-    border-color: #E7E5E4 !important;
-}
-[data-baseweb="input"] > div {
-    background-color: #FFFFFF !important;
-}
+/* Base-web input wrapper */
+[data-baseweb="input"],
+[data-baseweb="input"] > div,
+[data-baseweb="input"] > div > div,
 [data-baseweb="input"] input {
-    color: #1C1917 !important;
     background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
+    color: #1C1917 !important;
+    border-color: #E7E5E4 !important;
 }
 /* Calendario popup */
+[data-baseweb="calendar"],
 [data-baseweb="calendar"] * {
     background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
     color: #1C1917 !important;
 }
-[data-baseweb="calendar"] [aria-selected="true"] {
+[data-baseweb="calendar"] [aria-selected="true"],
+[data-baseweb="calendar"] button[aria-selected="true"] {
     background-color: #EAB308 !important;
+    background: #EAB308 !important;
     color: #FFFFFF !important;
+}
+[data-baseweb="calendar"] button:hover {
+    background-color: #FEF9EC !important;
 }
 
 /* ── Ocultar elementos de Streamlit ──────────────────────────────────────── */
@@ -596,6 +612,62 @@ def parsear_excel(contenido: bytes) -> pd.DataFrame:
         return pd.DataFrame()
 
     return pd.concat(frames, ignore_index=True, sort=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARSER DE PROYECCIONES (pestaña PROYECCION)
+# ─────────────────────────────────────────────────────────────────────────────
+def parsear_proyeccion(contenido: bytes) -> dict:
+    """
+    Lee la hoja PROYECCION del Excel y devuelve {cliente_upper: meta_anual}.
+    Si no existe o falla, retorna {}.
+    """
+    try:
+        xl   = pd.ExcelFile(io.BytesIO(contenido))
+        hoja = next(
+            (h for h in xl.sheet_names
+             if h.strip().upper() in ("PROYECCION", "PROYECCIÓN", "PROJECTION",
+                                      "PROYECCIONES", "PRESUPUESTO", "METAS")),
+            None,
+        )
+        if not hoja:
+            return {}
+
+        hr  = _fila_header(xl, hoja, max_scan=20)
+        raw = xl.parse(hoja, header=hr)
+        raw.columns = [str(c).strip().upper() for c in raw.columns]
+
+        # Detectar columna de cliente
+        col_cli = next(
+            (c for c in raw.columns
+             if any(k in c for k in ("CLIENTE","CLIENT","EMPRESA","ACCOUNT","CLIE"))),
+            None,
+        )
+        # Detectar columna de meta/proyección (valor anual total o acumulado)
+        col_meta = next(
+            (c for c in raw.columns
+             if any(k in c for k in ("META","PROYEC","TOTAL","PRESUP","BUDGET","ANUAL"))),
+            None,
+        )
+        if not col_cli or not col_meta:
+            # Fallback: primera columna = cliente, última numérica = meta
+            col_cli  = raw.columns[0]
+            num_cols = [c for c in raw.columns
+                        if pd.to_numeric(raw[c], errors="coerce").notna().any()]
+            col_meta = num_cols[-1] if num_cols else None
+
+        if not col_meta:
+            return {}
+
+        raw = raw[[col_cli, col_meta]].copy()
+        raw.columns = ["cliente", "meta"]
+        raw["meta"]    = pd.to_numeric(raw["meta"], errors="coerce")
+        raw["cliente"] = raw["cliente"].astype(str).str.strip().str.upper()
+        raw = raw.dropna(subset=["meta"]).query("meta > 0 and cliente != ''")
+
+        return dict(zip(raw["cliente"], raw["meta"]))
+    except Exception:
+        return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -936,11 +1008,20 @@ def render_dashboard(df: pd.DataFrame):
     # ══════════════════════════════════════════════════════════════════════
     # SECCIÓN INFERIOR — BP + Barras horizontales top 10
     # ══════════════════════════════════════════════════════════════════════
+    proyecciones = st.session_state.get("proyecciones", {})
+
     mask_bp = fdf["cliente"].str.upper().str.strip().str.contains(
         r"BANCO.*PAC[IÍ]FICO|PAC[IÍ]FICO.*BANCO", regex=True, na=False
     )
+    # Excluir también públicos y relacionados del resto
+    _TIPOS_EXCL = {"PÚBLICO", "PUBLICO", "RELACIONADO", "RELACIONADOS",
+                   "PÃBLICO", "PUUBLICO", "PUBLIC"}
+    mask_excl = (
+        mask_bp |
+        fdf["tipo"].astype(str).str.strip().str.upper().isin(_TIPOS_EXCL)
+    )
     df_bp   = fdf[mask_bp]
-    df_rest = fdf[~mask_bp]
+    df_rest = fdf[~mask_excl]
 
     st.markdown("<br>", unsafe_allow_html=True)
     bot_izq, bot_der = st.columns([0.9, 1.1])
@@ -972,8 +1053,29 @@ def render_dashboard(df: pd.DataFrame):
                 "Semáforos de cumplimiento</div>",
                 unsafe_allow_html=True,
             )
-            _semaforo("Ventas BP",  v_bp, v_bp * 0.90)
-            _semaforo("Margen BP",  m_bp, m_bp * 0.85 if m_bp > 0 else 1.0)
+            # Buscar meta de BP en proyecciones
+            _bp_key = next(
+                (k for k in proyecciones
+                 if "PACIFICO" in k.replace("Í","I").replace("í","I") or
+                    "BANCO DEL PAC" in k.replace("Í","I")),
+                None,
+            )
+            meta_v_bp = proyecciones.get(_bp_key, 0) if _bp_key else 0
+            meta_m_bp = meta_v_bp * 0.30 if meta_v_bp else 0   # 30% de margen esperado
+
+            if meta_v_bp:
+                _semaforo("Ventas BP",  v_bp, meta_v_bp)
+                if meta_m_bp:
+                    _semaforo("Margen BP",  m_bp, meta_m_bp)
+            else:
+                # Sin proyección → comparar contra sí mismo (siempre verde, informativo)
+                st.markdown(
+                    "<div style='font-size:0.75rem;color:#78716C;font-style:italic'>"
+                    "Sin datos de proyección en pestaña PROYECCION</div>",
+                    unsafe_allow_html=True,
+                )
+                _semaforo("Ventas BP",  v_bp, v_bp)
+                _semaforo("Margen BP",  m_bp, m_bp if m_bp > 0 else 1.0)
         else:
             st.info("Sin datos de Banco del Pacífico.")
 
@@ -1119,13 +1221,15 @@ def main():
                 )
                 return
 
-            excel_bytes = generar_excel_descarga(df, contenido)
+            excel_bytes  = generar_excel_descarga(df, contenido)
+            proyecciones = parsear_proyeccion(contenido)
 
             # Guardar SOLO en st.session_state (RAM volátil de la sesión)
             # Nunca se escribe en disco.
             st.session_state["df"]             = df
             st.session_state["excel_bytes"]    = excel_bytes
             st.session_state["nombre_archivo"] = subido.name.rsplit(".", 1)[0]
+            st.session_state["proyecciones"]   = proyecciones
 
         except Exception:
             # No exponer trazas de error al usuario
