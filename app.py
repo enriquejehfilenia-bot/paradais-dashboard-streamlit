@@ -1125,6 +1125,43 @@ def render_dashboard(df: pd.DataFrame):
             )
             st.plotly_chart(fig_c, use_container_width=True)
 
+            # ── Semáforos de cumplimiento — Top 10 clientes ───────────────
+            st.markdown(
+                "<div style='font-size:0.78rem;font-weight:700;"
+                "color:#78716C;margin:0.6rem 0 0.4rem 0;"
+                "text-transform:uppercase;letter-spacing:0.06em'>"
+                "🚦 Semáforos de cumplimiento</div>",
+                unsafe_allow_html=True,
+            )
+            if proyecciones:
+                # Mostrar semáforo por cada cliente del top10 que tenga proyección
+                top10_desc = top10.sort_values("Ventas", ascending=False)
+                hay_semaforos = False
+                for _, row in top10_desc.iterrows():
+                    cli_key = row["Cliente"].strip().upper()
+                    # Búsqueda flexible: coincidencia parcial
+                    meta_key = next(
+                        (k for k in proyecciones
+                         if cli_key in k or k in cli_key),
+                        None,
+                    )
+                    if meta_key:
+                        _semaforo(row["Cliente"], row["Ventas"],
+                                  proyecciones[meta_key])
+                        hay_semaforos = True
+                if not hay_semaforos:
+                    st.markdown(
+                        "<div style='font-size:0.75rem;color:#78716C;font-style:italic'>"
+                        "Ningún cliente del Top 10 tiene proyección en la pestaña PROYECCION</div>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown(
+                    "<div style='font-size:0.75rem;color:#78716C;font-style:italic'>"
+                    "Sin datos de proyección — carga un Excel con pestaña PROYECCION</div>",
+                    unsafe_allow_html=True,
+                )
+
     # ── Tabla detalle (expandible) ─────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     with st.expander("📋 Ver datos filtrados", expanded=False):
