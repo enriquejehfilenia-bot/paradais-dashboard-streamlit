@@ -1,0 +1,819 @@
+"""
+PARADAIS DDB · Dashboard Ejecutivo — Streamlit Cloud
+Versión autónoma, 100% gratuita, sin servidor local.
+Seguridad: auth por hash SHA-256, datos solo en RAM de sesión,
+           sin trazas de error expuestas, validación de archivo estricta.
+"""
+
+import io
+import re
+import time
+import hashlib
+import logging
+from datetime import datetime
+from typing import Optional
+
+import pandas as pd
+import streamlit as st
+import openpyxl
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.worksheet.table import Table, TableStyleInfo
+import plotly.express as px
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURACIÓN DE PÁGINA  (debe ser el primer comando Streamlit)
+# ─────────────────────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Paradais DDB · Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSS RESPONSIVO (desktop + móvil)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Fondo oscuro global */
+.stApp { background-color: #0f172a; }
+
+/* Tarjetas KPI */
+.kpi-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 0.6rem;
+    min-height: 100px;
+}
+.kpi-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.3rem;
+}
+.kpi-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    line-height: 1.1;
+}
+.kpi-delta-pos { color: #4ade80; font-size: 0.85rem; margin-top: 0.2rem; }
+.kpi-delta-neg { color: #f87171; font-size: 0.85rem; margin-top: 0.2rem; }
+
+/* Semáforos */
+.semaforo-verde {
+    background: #052e16;
+    border-left: 4px solid #4ade80;
+    color: #bbf7d0;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+    font-size: 0.88rem;
+}
+.semaforo-rojo {
+    background: #2d0000;
+    border-left: 4px solid #f87171;
+    color: #fecaca;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+    font-size: 0.88rem;
+}
+
+/* Títulos de sección */
+.section-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #cbd5e1;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #334155;
+    margin: 1.2rem 0 0.7rem 0;
+}
+
+/* Móvil: columnas se apilan */
+@media (max-width: 768px) {
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: none !important;
+        min-width: 100% !important;
+    }
+    .kpi-value { font-size: 1.4rem; }
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] { background-color: #0f172a; }
+[data-testid="stSidebar"] * { color: #cbd5e1 !important; }
+
+/* Botones */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+/* Ocultar menú hamburguesa y footer de Streamlit */
+#MainMenu, footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTENTICACIÓN — contraseña hash SHA-256 desde st.secrets
+# ─────────────────────────────────────────────────────────────────────────────
+_MAX_INTENTOS  = 5
+_BLOQUEO_SEGS  = 300   # 5 minutos
+
+
+def _sha256(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def _hash_esperado() -> str:
+    """Lee el hash desde st.secrets. Si no existe (dev local) usa hash de 'paradais2026'."""
+    try:
+        return st.secrets["auth"]["password_hash"]
+    except Exception:
+        return _sha256("paradais2026")
+
+
+def pantalla_login() -> bool:
+    """Muestra la pantalla de login. Retorna True solo cuando el usuario está autenticado."""
+    if st.session_state.get("autenticado"):
+        return True
+
+    ahora = time.time()
+    intentos      = st.session_state.get("_intentos", 0)
+    bloqueado_hasta = st.session_state.get("_bloqueado_hasta", 0)
+
+    if ahora < bloqueado_hasta:
+        restante = int(bloqueado_hasta - ahora)
+        st.error(f"🔒 Demasiados intentos fallidos. Intenta de nuevo en {restante} segundos.")
+        st.stop()
+
+    _, col_c, _ = st.columns([1, 1.6, 1])
+    with col_c:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(
+            "<h2 style='text-align:center;color:#e2e8f0'>📊 Paradais DDB</h2>"
+            "<p style='text-align:center;color:#94a3b8'>Dashboard Ejecutivo · Ingresa tu contraseña</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        with st.form("login", clear_on_submit=True):
+            pwd = st.text_input("Contraseña", type="password", placeholder="••••••••",
+                                label_visibility="collapsed")
+            ok = st.form_submit_button("Ingresar →", use_container_width=True, type="primary")
+
+        if ok:
+            if _sha256(pwd) == _hash_esperado():
+                st.session_state["autenticado"] = True
+                st.session_state["_intentos"]   = 0
+                st.rerun()
+            else:
+                intentos += 1
+                st.session_state["_intentos"] = intentos
+                if intentos >= _MAX_INTENTOS:
+                    st.session_state["_bloqueado_hasta"] = ahora + _BLOQUEO_SEGS
+                    st.error(f"🔒 Cuenta bloqueada por {_BLOQUEO_SEGS // 60} minutos.")
+                else:
+                    quedan = _MAX_INTENTOS - intentos
+                    st.error(f"❌ Contraseña incorrecta. Intentos restantes: {quedan}")
+
+    return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTANTES DEL PARSER
+# ─────────────────────────────────────────────────────────────────────────────
+MESES = [
+    "ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
+    "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE",
+]
+MES_NUM = {m: i + 1 for i, m in enumerate(MESES)}
+
+EXTRA_SHEETS = ["Paradais Media 2026"]
+
+HEADER_KW = {
+    "fecha","cliente","departamento","tipo","ciudad",
+    "base iva","comision","costos","rentabilidad","periodo","costo real",
+}
+
+COL_ALIASES = {
+    "fecha":          ["FECHA","Fecha","fecha","DATE","date"],
+    "cliente":        ["CLIENTE","Cliente","cliente","ANUNCIANTE","Anunciante"],
+    "departamento":   ["DEPARTAMENTO","Departamento","departamento","DEPTO","Depto"],
+    "base_iva":       ["BASE IVA","Base IVA","Base Iva","BASE_IVA","BASEIVA",
+                       "Ventas","VENTAS","NETO","Neto","BASE IVA 12%"],
+    "comision":       ["COMISION","Comisión","COMISIÓN","Comision","COMIS","comision"],
+    "costos":         ["COSTOS","Costos","costos","COSTO","Costo","COST",
+                       "Costo Real","COSTO REAL","CostoReal"],
+    "margen":         ["MARGEN","Margen","margen","UTILIDAD","Utilidad",
+                       "Rentabilidad","RENTABILIDAD","MARGEN BRUTO"],
+    "tipo":           ["TIPO","Tipo","tipo","TYPE","MODALIDAD","Modalidad"],
+    "ciudad":         ["CIUDAD","Ciudad","ciudad","CITY"],
+    "periodo_ingreso":["PERIODO INGRESO","Periodo Ingreso","PERIODO_INGRESO",
+                       "PERIODO","Periodo","Periodo Ingreso"],
+}
+
+# Columnas de la hoja limpia exportada
+EXPORT_COLS = [
+    "fecha","empresa","mes","ano","cliente","departamento_limpio",
+    "tipo","ciudad","base_iva","comision","total_venta_real","costos","margen",
+]
+EXPORT_HEADERS = [
+    "Fecha","Empresa","Mes","Año","Cliente","Departamento",
+    "Tipo","Ciudad","Base IVA","Comisión","Total Venta Real","Costos","Margen",
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARSER
+# ─────────────────────────────────────────────────────────────────────────────
+def _normalizar_depto(valor) -> Optional[str]:
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return None
+    d = str(valor).upper().strip()
+    d = re.sub(r'\s+COMISI[OÓ]N(ES)?\s*$', '', d, flags=re.IGNORECASE)
+    d = re.sub(r'^COMISI[OÓ]N(ES)?\s+', '', d, flags=re.IGNORECASE)
+    d = " ".join(d.split())
+    return d.strip() or None
+
+
+def _mapear_columnas(cols: list) -> dict:
+    upper = {c.strip().upper(): c for c in cols}
+    mapa = {}
+    for can, aliases in COL_ALIASES.items():
+        for alias in aliases:
+            if alias.upper() in upper:
+                mapa[can] = upper[alias.upper()]
+                break
+    return mapa
+
+
+def _fila_header(xl: pd.ExcelFile, hoja: str, max_scan: int = 15) -> int:
+    try:
+        raw = xl.parse(hoja, header=None, nrows=max_scan)
+    except Exception:
+        return 0
+    for idx, fila in raw.iterrows():
+        vals = {str(v).lower().strip() for v in fila.values if pd.notna(v) and str(v).strip()}
+        if sum(1 for kw in HEADER_KW if any(kw in v for v in vals)) >= 2:
+            return int(idx)
+    return 0
+
+
+def _leer_hoja(xl: pd.ExcelFile, hoja: str, empresa: str,
+               mes: Optional[str] = None, ano: Optional[int] = None) -> pd.DataFrame:
+    try:
+        hr = _fila_header(xl, hoja)
+        df = xl.parse(hoja, header=hr)
+    except Exception:
+        return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    mapa   = _mapear_columnas(list(df.columns))
+    rename = {v: k for k, v in mapa.items()}
+    df     = df.rename(columns=rename)
+
+    for col_req in ("fecha", "cliente", "departamento"):
+        if col_req not in df.columns:
+            return pd.DataFrame()
+
+    # Filtrar filas inválidas
+    df = df[df["fecha"].notna()]
+    df = df[df["departamento"].notna()]
+    df = df[df["departamento"].astype(str).str.strip() != ""]
+
+    if "cliente" in df.columns:
+        df = df[df["cliente"].notna()]
+        df = df[~df["cliente"].astype(str).str.upper().str.contains(
+            r'\bTOTAL\b|\bSUBTOTAL\b|\bSUMA\b|\bTOTALES\b|\bCLIENTE\b',
+            regex=True, na=False,
+        )]
+
+    # Eliminar filas-encabezado duplicadas
+    for col, val in [("tipo","TIPO"), ("ciudad","CIUDAD"), ("departamento","DEPARTAMENTO")]:
+        if col in df.columns:
+            df = df[df[col].astype(str).str.upper().str.strip() != val]
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Normalizar departamento
+    df["departamento_limpio"] = df["departamento"].apply(_normalizar_depto)
+
+    # Columnas numéricas
+    for nc in ("base_iva", "comision", "costos", "margen"):
+        df[nc] = pd.to_numeric(df.get(nc, 0), errors="coerce").fillna(0.0)
+
+    # Total Venta Real
+    df["total_venta_real"] = df["base_iva"] + df["comision"]
+
+    # Fechas
+    MMAP = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+            7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
+    try:
+        fechas_dt = pd.to_datetime(df["fecha"], errors="coerce")
+        df["fecha"] = fechas_dt.dt.strftime("%Y-%m-%d")
+    except Exception:
+        fechas_dt = pd.Series([pd.NaT] * len(df), index=df.index)
+        df["fecha"] = df["fecha"].astype(str)
+
+    if mes is None:
+        df["mes"] = fechas_dt.dt.month.map(MMAP).fillna("SIN MES")
+        df["ano"] = fechas_dt.dt.year.fillna(ano or datetime.now().year).astype(int)
+    else:
+        df["mes"] = mes
+        df["ano"] = ano or datetime.now().year
+
+    df["empresa"] = empresa
+    df["_fecha_dt"] = fechas_dt
+
+    # Limpiar strings
+    for sc in ("cliente","departamento","departamento_limpio","tipo","ciudad"):
+        if sc in df.columns:
+            df[sc] = df[sc].astype(str).str.strip().replace("nan","").replace("None","")
+
+    return df
+
+
+def parsear_excel(contenido: bytes) -> pd.DataFrame:
+    """
+    Parsea el Excel en memoria (bytes).
+    Nunca escribe en disco. Retorna DataFrame consolidado.
+    """
+    xl     = pd.ExcelFile(io.BytesIO(contenido))
+    disp   = xl.sheet_names
+    ano_hoy = datetime.now().year
+    frames = []
+
+    # Hojas mensuales
+    for hoja in MESES:
+        if hoja in disp:
+            df = _leer_hoja(xl, hoja, "Paradais", mes=hoja, ano=ano_hoy)
+            if not df.empty:
+                frames.append(df)
+
+    # Hojas Paradais Media
+    encontradas = set()
+    for hoja in EXTRA_SHEETS:
+        if hoja in disp:
+            df = _leer_hoja(xl, hoja, "Paradais Media", mes=None, ano=ano_hoy)
+            if not df.empty:
+                frames.append(df)
+            encontradas.add(hoja)
+
+    if not encontradas:
+        for hoja in disp:
+            u = hoja.upper().strip()
+            if ("PARADAIS MEDIA" in u or u.startswith("MEDIA")) and hoja not in encontradas:
+                df = _leer_hoja(xl, hoja, "Paradais Media", mes=None, ano=ano_hoy)
+                if not df.empty:
+                    frames.append(df)
+                encontradas.add(hoja)
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GENERADOR DE EXCEL DESCARGABLE
+# ─────────────────────────────────────────────────────────────────────────────
+def generar_excel_descarga(df: pd.DataFrame, original_bytes: bytes) -> bytes:
+    """
+    Genera Excel en memoria (BytesIO): hojas originales intactas +
+    nueva hoja 'DATA_LIMPIA_Y_ESTRUCTURADA' al inicio.
+    NUNCA escribe en disco.
+    """
+    cols_exp  = [c for c in EXPORT_COLS if c in df.columns]
+    hdrs_exp  = [EXPORT_HEADERS[EXPORT_COLS.index(c)] for c in cols_exp]
+    df_export = df[cols_exp].copy()
+    df_export.columns = hdrs_exp
+
+    # Redondear columnas numéricas
+    for col in ("Base IVA","Comisión","Total Venta Real","Costos","Margen"):
+        if col in df_export.columns:
+            df_export[col] = pd.to_numeric(df_export[col], errors="coerce").round(2)
+
+    # Cargar workbook original
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(original_bytes), data_only=True)
+    except Exception:
+        wb = openpyxl.Workbook()
+        if "Sheet" in wb.sheetnames:
+            del wb["Sheet"]
+
+    # Crear hoja limpia en posición 0
+    ws = wb.create_sheet("DATA_LIMPIA_Y_ESTRUCTURADA", 0)
+
+    H_FILL  = PatternFill("solid", fgColor="1E3A5F")
+    ALT_FILL= PatternFill("solid", fgColor="EFF6FF")
+    H_FONT  = Font(bold=True, color="FFFFFF", size=10)
+    D_FONT  = Font(size=9)
+    CENTER  = Alignment(horizontal="center", vertical="center")
+
+    # Encabezados
+    for ci, hdr in enumerate(df_export.columns, 1):
+        c = ws.cell(row=1, column=ci, value=hdr)
+        c.fill, c.font, c.alignment = H_FILL, H_FONT, CENTER
+
+    # Datos
+    for ri, row in enumerate(df_export.itertuples(index=False), 2):
+        fill = ALT_FILL if ri % 2 == 0 else None
+        for ci, val in enumerate(row, 1):
+            c = ws.cell(row=ri, column=ci, value=val)
+            c.font = D_FONT
+            if fill:
+                c.fill = fill
+
+    # Tabla nativa de Excel
+    n_filas = len(df_export)
+    if n_filas > 0:
+        last_col = openpyxl.utils.get_column_letter(len(df_export.columns))
+        ref      = f"A1:{last_col}{n_filas + 1}"
+        tbl      = Table(displayName="DataLimpia", ref=ref)
+        tbl.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium9",
+            showRowStripes=True, showColumnStripes=False,
+        )
+        ws.add_table(tbl)
+
+    # Auto-ancho de columnas
+    for col_cells in ws.columns:
+        ancho = max((len(str(c.value or "")) for c in col_cells), default=10)
+        ws.column_dimensions[col_cells[0].column_letter].width = min(ancho + 3, 36)
+
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS DE FORMATO
+# ─────────────────────────────────────────────────────────────────────────────
+def _m(v: float) -> str:
+    """Formato moneda."""
+    return f"${v:,.0f}"
+
+
+def _p(v: float) -> str:
+    """Formato porcentaje."""
+    return f"{v:.1f}%"
+
+
+def _kpi(col, label: str, valor: str, delta: str = "", pos: bool = True):
+    cls   = "kpi-delta-pos" if pos else "kpi-delta-neg"
+    extra = f'<div class="{cls}">{delta}</div>' if delta else ""
+    col.markdown(
+        f'<div class="kpi-card">'
+        f'<div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{valor}</div>'
+        f'{extra}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _semaforo(label: str, real: float, meta: float, fmt=_m):
+    pct = (real / meta * 100) if meta else 0
+    ok  = real >= meta
+    css = "semaforo-verde" if ok else "semaforo-rojo"
+    ico = "🟢" if ok else "🔴"
+    st.markdown(
+        f'<div class="{css}"><b>{ico} {label}</b><br>'
+        f'Real: <b>{fmt(real)}</b> &nbsp;|&nbsp; Meta: {fmt(meta)} '
+        f'&nbsp;|&nbsp; Cumplimiento: <b>{pct:.1f}%</b></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RENDERIZADO DEL DASHBOARD
+# ─────────────────────────────────────────────────────────────────────────────
+def render_dashboard(df: pd.DataFrame):
+    # ── Sidebar de filtros ─────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("## 🔎 Filtros")
+
+        tipos = ["Todos"] + sorted(df["tipo"].replace("","—").dropna().unique().tolist())
+        sel_tipo = st.selectbox("Tipo", tipos)
+
+        ciudades = ["Todas"] + sorted(df["ciudad"].replace("","—").dropna().unique().tolist())
+        sel_ciudad = st.selectbox("Ciudad", ciudades)
+
+        deptos = ["Todos"] + sorted(
+            [d for d in df["departamento_limpio"].dropna().unique() if d]
+        )
+        sel_depto = st.selectbox("Departamento", deptos)
+
+        clientes = ["Todos"] + sorted(
+            [c for c in df["cliente"].dropna().unique() if c]
+        )
+        sel_cliente = st.selectbox("Cliente", clientes)
+
+        # Rango de fechas
+        df["_fecha_dt"] = pd.to_datetime(df["fecha"], errors="coerce")
+        f_min = df["_fecha_dt"].min()
+        f_max = df["_fecha_dt"].max()
+
+        if pd.notna(f_min) and pd.notna(f_max):
+            desde = st.date_input("Desde", value=f_min.date(),
+                                  min_value=f_min.date(), max_value=f_max.date())
+            hasta = st.date_input("Hasta", value=f_max.date(),
+                                  min_value=f_min.date(), max_value=f_max.date())
+        else:
+            desde = hasta = None
+
+        st.markdown("---")
+        if st.button("🔓 Cerrar sesión", use_container_width=True):
+            for k in ("autenticado", "df", "excel_bytes", "nombre_archivo"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    # ── Aplicar filtros ────────────────────────────────────────────────────
+    fdf = df.copy()
+    if sel_tipo    != "Todos":   fdf = fdf[fdf["tipo"]                == sel_tipo]
+    if sel_ciudad  != "Todas":   fdf = fdf[fdf["ciudad"]              == sel_ciudad]
+    if sel_depto   != "Todos":   fdf = fdf[fdf["departamento_limpio"] == sel_depto]
+    if sel_cliente != "Todos":   fdf = fdf[fdf["cliente"]             == sel_cliente]
+    if desde and hasta:
+        fdf = fdf[
+            (fdf["_fecha_dt"].dt.date >= desde) &
+            (fdf["_fecha_dt"].dt.date <= hasta)
+        ]
+
+    n_filas = len(fdf)
+    if n_filas == 0:
+        st.warning("No hay datos para los filtros seleccionados.")
+        return
+
+    # ── KPIs globales ──────────────────────────────────────────────────────
+    ventas  = fdf["total_venta_real"].sum()
+    costos  = fdf["costos"].sum()
+    margen  = ventas - costos
+    rentab  = (margen / ventas * 100) if ventas else 0.0
+
+    st.markdown(
+        f'<div class="section-title">📈 KPIs Ejecutivos '
+        f'<span style="font-size:0.75rem;color:#64748b;font-weight:400">'
+        f'({n_filas:,} registros filtrados)</span></div>',
+        unsafe_allow_html=True,
+    )
+    k1, k2, k3, k4 = st.columns(4)
+    _kpi(k1, "Ventas Totales",   _m(ventas),  pos=True)
+    _kpi(k2, "Costos Totales",   _m(costos),  pos=False)
+    _kpi(k3, "Margen Bruto",     _m(margen),  pos=margen >= 0)
+    _kpi(k4, "% Rentabilidad",   _p(rentab),  pos=rentab >= 30)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Separación Banco del Pacífico / Resto ──────────────────────────────
+    mask_bp = fdf["cliente"].str.upper().str.strip().str.contains(
+        r"BANCO.*PAC[IÍ]FICO|PAC[IÍ]FICO.*BANCO", regex=True, na=False
+    )
+    df_bp   = fdf[mask_bp]
+    df_rest = fdf[~mask_bp]
+
+    col_bp, col_rest = st.columns(2)
+
+    # ── Banco del Pacífico ─────────────────────────────────────────────────
+    with col_bp:
+        st.markdown('<div class="section-title">🏦 Banco del Pacífico</div>',
+                    unsafe_allow_html=True)
+
+        v_bp = df_bp["total_venta_real"].sum()
+        c_bp = df_bp["costos"].sum()
+        m_bp = v_bp - c_bp
+        r_bp = (m_bp / v_bp * 100) if v_bp else 0.0
+
+        b1, b2 = st.columns(2)
+        b1.metric("Ventas",       _m(v_bp))
+        b2.metric("Costos",       _m(c_bp))
+        b3, b4 = st.columns(2)
+        b3.metric("Margen",       _m(m_bp))
+        b4.metric("Rentabilidad", _p(r_bp))
+
+        if v_bp > 0:
+            st.markdown("**Semáforos**")
+            _semaforo("Ventas BP",  v_bp, v_bp * 0.90)
+            _semaforo("Margen BP",  m_bp, m_bp * 0.85 if m_bp > 0 else 1.0)
+        else:
+            st.info("Sin datos de Banco del Pacífico en la selección actual.")
+
+    # ── Resto de Clientes ──────────────────────────────────────────────────
+    with col_rest:
+        st.markdown('<div class="section-title">👥 Resto de Clientes</div>',
+                    unsafe_allow_html=True)
+
+        v_r = df_rest["total_venta_real"].sum()
+        c_r = df_rest["costos"].sum()
+        m_r = v_r - c_r
+        r_r = (m_r / v_r * 100) if v_r else 0.0
+
+        r1, r2 = st.columns(2)
+        r1.metric("Ventas",       _m(v_r))
+        r2.metric("Costos",       _m(c_r))
+        r3, r4 = st.columns(2)
+        r3.metric("Margen",       _m(m_r))
+        r4.metric("Rentabilidad", _p(r_r))
+
+        # Top 5 clientes con semáforo
+        top5 = (
+            df_rest.groupby("cliente")["total_venta_real"]
+            .sum().sort_values(ascending=False).head(5)
+        )
+        if not top5.empty:
+            st.markdown("**Top 5 Clientes**")
+            for cli, val in top5.items():
+                pct_c = val / v_r * 100 if v_r else 0
+                css   = "semaforo-verde" if pct_c >= 5 else "semaforo-rojo"
+                st.markdown(
+                    f'<div class="{css}">{cli}: <b>{_m(val)}</b> ({pct_c:.1f}%)</div>',
+                    unsafe_allow_html=True,
+                )
+
+    # ── Gráficos ───────────────────────────────────────────────────────────
+    st.markdown("---")
+    gc1, gc2 = st.columns(2)
+
+    with gc1:
+        st.markdown('<div class="section-title">📊 Ventas por Departamento</div>',
+                    unsafe_allow_html=True)
+        df_dept = (
+            fdf.groupby("departamento_limpio")["total_venta_real"]
+            .sum().reset_index()
+            .rename(columns={"departamento_limpio": "Departamento",
+                             "total_venta_real":    "Ventas"})
+            .sort_values("Ventas", ascending=True)
+        )
+        if not df_dept.empty:
+            fig = px.bar(
+                df_dept, x="Ventas", y="Departamento", orientation="h",
+                template="plotly_dark", color_discrete_sequence=["#38bdf8"],
+                text_auto=".3s",
+            )
+            fig.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=320,
+                              xaxis_title="", yaxis_title="",
+                              plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with gc2:
+        st.markdown('<div class="section-title">📅 Evolución Mensual de Ventas</div>',
+                    unsafe_allow_html=True)
+        df_mes = (
+            fdf.groupby("mes")["total_venta_real"]
+            .sum().reset_index()
+            .rename(columns={"mes":"Mes","total_venta_real":"Ventas"})
+        )
+        df_mes["_ord"] = df_mes["Mes"].map(MES_NUM).fillna(99)
+        df_mes = df_mes.sort_values("_ord")
+        if not df_mes.empty:
+            fig2 = px.area(
+                df_mes, x="Mes", y="Ventas", markers=True,
+                template="plotly_dark", color_discrete_sequence=["#818cf8"],
+            )
+            fig2.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=320,
+                               xaxis_title="", yaxis_title="",
+                               plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
+            st.plotly_chart(fig2, use_container_width=True)
+
+    # Gráfico empresa
+    st.markdown('<div class="section-title">🏢 Distribución por Empresa</div>',
+                unsafe_allow_html=True)
+    df_emp = (
+        fdf.groupby("empresa")["total_venta_real"]
+        .sum().reset_index()
+        .rename(columns={"empresa":"Empresa","total_venta_real":"Ventas"})
+    )
+    if not df_emp.empty:
+        fig3 = px.pie(
+            df_emp, names="Empresa", values="Ventas",
+            template="plotly_dark", hole=0.4,
+            color_discrete_sequence=px.colors.sequential.Blues_r,
+        )
+        fig3.update_layout(margin=dict(l=0,r=0,t=20,b=0), height=300,
+                           plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
+        st.plotly_chart(fig3, use_container_width=True)
+
+    # ── Tabla detalle (expandible) ─────────────────────────────────────────
+    with st.expander("📋 Ver datos filtrados", expanded=False):
+        cols_vis = [c for c in EXPORT_COLS if c in fdf.columns]
+        df_vis   = fdf[cols_vis].copy()
+        df_vis.columns = [EXPORT_HEADERS[EXPORT_COLS.index(c)] for c in cols_vis]
+        st.dataframe(df_vis, use_container_width=True, height=380)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+_MAX_MB   = 50
+_EXTS_OK  = {".xlsx", ".xlsm"}
+_MAGIC_PK = b"PK\x03\x04"    # firma ZIP/OOXML
+
+
+def main():
+    # ── Autenticación ──────────────────────────────────────────────────────
+    if not pantalla_login():
+        st.stop()
+
+    st.markdown(
+        "<h2 style='color:#e2e8f0;margin-bottom:0'>📊 Paradais DDB · Dashboard Ejecutivo</h2>"
+        "<p style='color:#94a3b8;margin-top:0.2rem'>Carga tu archivo Excel para visualizar los datos financieros.</p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("---")
+
+    # ── Si ya hay datos en sesión → mostrar dashboard ──────────────────────
+    if st.session_state.get("df") is not None:
+        df = st.session_state["df"]
+
+        col_dl, col_nuevo, _ = st.columns([2, 2, 4])
+        with col_dl:
+            st.download_button(
+                label="⬇️  Descargar Excel Limpio",
+                data=st.session_state["excel_bytes"],
+                file_name=f"DATA_LIMPIA_{st.session_state.get('nombre_archivo','export')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with col_nuevo:
+            if st.button("📂 Cargar nuevo archivo", use_container_width=True):
+                for k in ("df", "excel_bytes", "nombre_archivo"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_dashboard(df)
+        return
+
+    # ── Carga de archivo ───────────────────────────────────────────────────
+    subido = st.file_uploader(
+        "Selecciona el archivo Excel de ventas",
+        type=["xlsx", "xlsm"],
+        help=f"Máximo {_MAX_MB} MB · Formatos: .xlsx · .xlsm",
+    )
+
+    if subido is None:
+        st.info("⬆️  Carga un archivo .xlsx o .xlsm para comenzar.")
+        return
+
+    # Validación de extensión
+    ext = ("." + subido.name.rsplit(".", 1)[-1].lower()) if "." in subido.name else ""
+    if ext not in _EXTS_OK:
+        st.error("Error en el formato del archivo cargado.")
+        return
+
+    # Leer bytes
+    contenido = subido.read()
+
+    # Validación de tamaño
+    if len(contenido) / (1024 * 1024) > _MAX_MB:
+        st.error(f"El archivo supera el límite de {_MAX_MB} MB.")
+        return
+
+    # Validación de magic bytes (firma OOXML/ZIP)
+    if contenido[:4] != _MAGIC_PK:
+        st.error("Error en el formato del archivo cargado.")
+        return
+
+    # ── Procesamiento en memoria ───────────────────────────────────────────
+    with st.spinner("⚙️  Procesando datos, por favor espera…"):
+        try:
+            df = parsear_excel(contenido)
+
+            if df.empty:
+                st.warning(
+                    "No se encontraron datos válidos. Verifica que el archivo contenga "
+                    "hojas mensuales (ENERO–DICIEMBRE) o 'Paradais Media 2026'."
+                )
+                return
+
+            excel_bytes = generar_excel_descarga(df, contenido)
+
+            # Guardar SOLO en st.session_state (RAM volátil de la sesión)
+            # Nunca se escribe en disco.
+            st.session_state["df"]             = df
+            st.session_state["excel_bytes"]    = excel_bytes
+            st.session_state["nombre_archivo"] = subido.name.rsplit(".", 1)[0]
+
+        except Exception:
+            # No exponer trazas de error al usuario
+            st.error("Error en el formato del archivo cargado.")
+            return
+
+    st.success(f"✅  {len(df):,} registros procesados correctamente.")
+    st.rerun()
+
+
+if __name__ == "__main__":
+    main()

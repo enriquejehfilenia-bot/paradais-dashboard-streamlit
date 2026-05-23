@@ -1,0 +1,19 @@
+# Secrets — NUNCA subir a GitHub
+.streamlit/secrets.toml
+
+# Archivos Excel con datos sensibles
+*.xlsx
+*.xlsm
+*.xls
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
