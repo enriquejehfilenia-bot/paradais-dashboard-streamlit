@@ -28,7 +28,7 @@ st.set_page_config(
     page_title="Paradais DDB · Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -693,55 +693,15 @@ def _semaforo(label: str, real: float, meta: float, fmt=_m):
 # ─────────────────────────────────────────────────────────────────────────────
 def render_dashboard(df: pd.DataFrame):
 
-    # ── Sidebar de filtros ─────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown(
-            "<div style='font-family:Georgia,serif;font-size:1rem;"
-            "font-weight:700;color:#1C1917;margin-bottom:1rem'>🔎 Filtros</div>",
-            unsafe_allow_html=True,
-        )
-        tipos     = ["Todos"] + sorted(df["tipo"].replace("","—").dropna().unique().tolist())
-        ciudades  = ["Todas"] + sorted(df["ciudad"].replace("","—").dropna().unique().tolist())
-        deptos    = ["Todos"] + sorted([d for d in df["departamento_limpio"].dropna().unique() if d])
-        clientes  = ["Todos"] + sorted([c for c in df["cliente"].dropna().unique() if c])
+    # ── Preparar opciones de filtros ──────────────────────────────────────
+    df["_fecha_dt"] = pd.to_datetime(df["fecha"], errors="coerce")
+    f_min = df["_fecha_dt"].min()
+    f_max = df["_fecha_dt"].max()
 
-        sel_tipo    = st.selectbox("Tipo",         tipos)
-        sel_ciudad  = st.selectbox("Ciudad",       ciudades)
-        sel_depto   = st.selectbox("Departamento", deptos)
-        sel_cliente = st.selectbox("Cliente",      clientes)
-
-        df["_fecha_dt"] = pd.to_datetime(df["fecha"], errors="coerce")
-        f_min = df["_fecha_dt"].min()
-        f_max = df["_fecha_dt"].max()
-        if pd.notna(f_min) and pd.notna(f_max):
-            desde = st.date_input("Desde", value=f_min.date(),
-                                  min_value=f_min.date(), max_value=f_max.date())
-            hasta = st.date_input("Hasta", value=f_max.date(),
-                                  min_value=f_min.date(), max_value=f_max.date())
-        else:
-            desde = hasta = None
-
-        st.markdown("---")
-        if st.button("Cerrar sesión", use_container_width=True):
-            for k in ("autenticado", "df", "excel_bytes", "nombre_archivo"):
-                st.session_state.pop(k, None)
-            st.rerun()
-
-    # ── Aplicar filtros ────────────────────────────────────────────────────
-    fdf = df.copy()
-    if sel_tipo    != "Todos":   fdf = fdf[fdf["tipo"]                == sel_tipo]
-    if sel_ciudad  != "Todas":   fdf = fdf[fdf["ciudad"]              == sel_ciudad]
-    if sel_depto   != "Todos":   fdf = fdf[fdf["departamento_limpio"] == sel_depto]
-    if sel_cliente != "Todos":   fdf = fdf[fdf["cliente"]             == sel_cliente]
-    if desde and hasta:
-        fdf = fdf[
-            (fdf["_fecha_dt"].dt.date >= desde) &
-            (fdf["_fecha_dt"].dt.date <= hasta)
-        ]
-
-    if len(fdf) == 0:
-        st.warning("No hay datos para los filtros seleccionados.")
-        return
+    tipos    = ["Todos"] + sorted(df["tipo"].replace("","—").dropna().unique().tolist())
+    ciudades = ["Todas"] + sorted(df["ciudad"].replace("","—").dropna().unique().tolist())
+    deptos   = ["Todos"] + sorted([d for d in df["departamento_limpio"].dropna().unique() if d])
+    clientes = ["Todos"] + sorted([c for c in df["cliente"].dropna().unique() if c])
 
     # ── HEADER ────────────────────────────────────────────────────────────
     st.markdown(
@@ -764,6 +724,59 @@ def render_dashboard(df: pd.DataFrame):
         '</div>',
         unsafe_allow_html=True,
     )
+
+    # ── Barra de filtros horizontal ───────────────────────────────────────
+    with st.container():
+        st.markdown(
+            "<div style='background:#FFFFFF;border:1px solid #E7E5E4;border-radius:12px;"
+            "padding:0.75rem 1.2rem 0.5rem 1.2rem;margin-bottom:1rem;"
+            "box-shadow:rgba(0,0,0,0.03) 0px 2px 8px;'>"
+            "<span style='font-size:0.72rem;font-weight:700;color:#78716C;"
+            "text-transform:uppercase;letter-spacing:0.08em'>🔎 Filtros</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        fc1, fc2, fc3, fc4, fc5, fc6, fc7 = st.columns([1.2, 1.2, 1.5, 1.8, 1.1, 1.1, 0.8])
+        with fc1:
+            sel_tipo    = st.selectbox("Tipo",          tipos,    label_visibility="visible")
+        with fc2:
+            sel_ciudad  = st.selectbox("Ciudad",        ciudades, label_visibility="visible")
+        with fc3:
+            sel_depto   = st.selectbox("Departamento",  deptos,   label_visibility="visible")
+        with fc4:
+            sel_cliente = st.selectbox("Cliente",       clientes, label_visibility="visible")
+        if pd.notna(f_min) and pd.notna(f_max):
+            with fc5:
+                desde = st.date_input("Desde", value=f_min.date(),
+                                      min_value=f_min.date(), max_value=f_max.date())
+            with fc6:
+                hasta = st.date_input("Hasta", value=f_max.date(),
+                                      min_value=f_min.date(), max_value=f_max.date())
+        else:
+            desde = hasta = None
+        with fc7:
+            st.markdown("<div style='margin-top:1.6rem'>", unsafe_allow_html=True)
+            if st.button("🚪 Salir", use_container_width=True):
+                for k in ("autenticado", "df", "excel_bytes", "nombre_archivo"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Aplicar filtros ────────────────────────────────────────────────────
+    fdf = df.copy()
+    if sel_tipo    != "Todos":   fdf = fdf[fdf["tipo"]                == sel_tipo]
+    if sel_ciudad  != "Todas":   fdf = fdf[fdf["ciudad"]              == sel_ciudad]
+    if sel_depto   != "Todos":   fdf = fdf[fdf["departamento_limpio"] == sel_depto]
+    if sel_cliente != "Todos":   fdf = fdf[fdf["cliente"]             == sel_cliente]
+    if desde and hasta:
+        fdf = fdf[
+            (fdf["_fecha_dt"].dt.date >= desde) &
+            (fdf["_fecha_dt"].dt.date <= hasta)
+        ]
+
+    if len(fdf) == 0:
+        st.warning("No hay datos para los filtros seleccionados.")
+        return
 
     # ── KPIs ──────────────────────────────────────────────────────────────
     ventas = fdf["total_venta_real"].sum()
