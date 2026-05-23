@@ -132,11 +132,22 @@ def _sha256(texto: str) -> str:
 
 
 def _hash_esperado() -> str:
-    """Lee el hash desde st.secrets. Si no existe (dev local) usa hash de 'paradais2026'."""
+    """
+    Lee el hash SHA-256 desde st.secrets['auth']['password_hash'].
+    NUNCA se define una contraseña por defecto en el código.
+    Si el secret no existe, la app se detiene con un mensaje de configuración.
+    """
     try:
-        return st.secrets["auth"]["password_hash"]
+        h = st.secrets["auth"]["password_hash"]
+        if not h or len(h) != 64:
+            raise ValueError("Hash inválido")
+        return h
     except Exception:
-        return _sha256("paradais2026")
+        st.error(
+            "⚙️ **Configuración requerida:** "
+            "El administrador debe configurar `[auth] password_hash` en los Secrets de esta app."
+        )
+        st.stop()
 
 
 def pantalla_login() -> bool:
