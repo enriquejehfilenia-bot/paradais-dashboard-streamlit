@@ -19,6 +19,7 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 import plotly.express as px
+import plotly.graph_objects as go
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN DE PÁGINA  (debe ser el primer comando Streamlit)
@@ -35,87 +36,215 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Fondo oscuro global */
-.stApp { background-color: #0f172a; }
+/* ── Paleta Elegancia Editorial ──────────────────────────────────────────── */
+:root {
+    --bg:        #FDFCFA;
+    --card:      #FFFFFF;
+    --text:      #1C1917;
+    --text-soft: #78716C;
+    --accent:    #EAB308;
+    --border:    #E7E5E4;
+    --shadow:    rgba(0,0,0,0.03) 0px 4px 12px;
+    --green:     #10B981;
+    --amber:     #F59E0B;
+    --red:       #DC2626;
+    --gray-line: #475569;
+}
 
-/* Tarjetas KPI */
-.kpi-card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 1.1rem 1.3rem;
-    margin-bottom: 0.6rem;
-    min-height: 100px;
+/* Fondo canvas */
+.stApp, [data-testid="stAppViewContainer"] {
+    background-color: #FDFCFA !important;
 }
-.kpi-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 0.3rem;
+[data-testid="stHeader"] { background: transparent !important; }
+
+/* ── Header principal ─────────────────────────────────────────────────────── */
+.ddb-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 0 0.5rem 0;
+    border-bottom: 3px solid #EAB308;
+    margin-bottom: 1.4rem;
 }
-.kpi-value {
-    font-size: 1.8rem;
+.ddb-logo {
+    width: 44px; height: 44px;
+    background: #1C1917;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.ddb-logo svg { width: 26px; height: 26px; }
+.ddb-title {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.55rem;
     font-weight: 700;
-    color: #e2e8f0;
+    color: #1C1917;
     line-height: 1.1;
 }
-.kpi-delta-pos { color: #4ade80; font-size: 0.85rem; margin-top: 0.2rem; }
-.kpi-delta-neg { color: #f87171; font-size: 0.85rem; margin-top: 0.2rem; }
-
-/* Semáforos */
-.semaforo-verde {
-    background: #052e16;
-    border-left: 4px solid #4ade80;
-    color: #bbf7d0;
-    padding: 0.6rem 1rem;
-    border-radius: 6px;
-    margin: 0.3rem 0;
-    font-size: 0.88rem;
+.ddb-sub {
+    font-size: 0.78rem;
+    color: #78716C;
+    margin-top: 0.1rem;
+    font-family: Georgia, serif;
+    font-style: italic;
 }
-.semaforo-rojo {
-    background: #2d0000;
-    border-left: 4px solid #f87171;
-    color: #fecaca;
-    padding: 0.6rem 1rem;
-    border-radius: 6px;
-    margin: 0.3rem 0;
-    font-size: 0.88rem;
+.ddb-badge {
+    margin-left: auto;
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    color: #15803D;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.3rem 0.7rem;
+    border-radius: 20px;
+    white-space: nowrap;
 }
 
-/* Títulos de sección */
+/* ── Tarjetas KPI ─────────────────────────────────────────────────────────── */
+.kpi-card {
+    background: #FFFFFF;
+    border: 1px solid #E7E5E4;
+    border-radius: 14px;
+    padding: 1.1rem 1.4rem 1rem 1.4rem;
+    box-shadow: rgba(0,0,0,0.03) 0px 4px 12px;
+    margin-bottom: 0.6rem;
+    min-height: 108px;
+    position: relative;
+    overflow: hidden;
+}
+.kpi-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: #EAB308;
+    border-radius: 14px 14px 0 0;
+}
+.kpi-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #78716C;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.4rem;
+}
+.kpi-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1C1917;
+    line-height: 1.1;
+    font-family: Georgia, serif;
+}
+.kpi-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    margin-top: 0.3rem;
+}
+.badge-green  { background:#D1FAE5; color:#065F46; }
+.badge-amber  { background:#FEF3C7; color:#92400E; }
+.badge-red    { background:#FEE2E2; color:#991B1B; }
+.badge-neutral{ background:#F5F5F4; color:#57534E; }
+
+/* ── Semáforos mate ───────────────────────────────────────────────────────── */
+.sem-verde {
+    background: #F0FDF4;
+    border-left: 4px solid #10B981;
+    color: #1C1917;
+    padding: 0.55rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 0.3rem 0;
+    font-size: 0.86rem;
+}
+.sem-amber {
+    background: #FFFBEB;
+    border-left: 4px solid #F59E0B;
+    color: #1C1917;
+    padding: 0.55rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 0.3rem 0;
+    font-size: 0.86rem;
+}
+.sem-rojo {
+    background: #FEF2F2;
+    border-left: 4px solid #DC2626;
+    color: #1C1917;
+    padding: 0.55rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 0.3rem 0;
+    font-size: 0.86rem;
+}
+
+/* ── Títulos de sección ──────────────────────────────────────────────────── */
 .section-title {
+    font-family: Georgia, serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1C1917;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid #F5F5F4;
+    margin: 1.4rem 0 0.75rem 0;
+}
+
+/* ── Bloque Banco del Pacífico ─────────────────────────────────────────────── */
+.bp-block {
+    background: #FFFFFF;
+    border: 1px solid #E7E5E4;
+    border-radius: 14px;
+    padding: 1.2rem 1.4rem;
+    box-shadow: rgba(0,0,0,0.03) 0px 4px 12px;
+}
+.bp-block-title {
+    font-family: Georgia, serif;
     font-size: 1.05rem;
     font-weight: 700;
-    color: #cbd5e1;
-    padding-bottom: 0.4rem;
-    border-bottom: 1px solid #334155;
-    margin: 1.2rem 0 0.7rem 0;
+    color: #1C1917;
+    margin-bottom: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
-/* Móvil: columnas se apilan */
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: #FDFCFA !important;
+    border-right: 1px solid #E7E5E4;
+}
+[data-testid="stSidebar"] * { color: #1C1917 !important; }
+[data-testid="stSidebar"] .stSelectbox label { font-size: 0.8rem !important; }
+
+/* ── Botones ─────────────────────────────────────────────────────────────── */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 600;
+    border: 1px solid #E7E5E4 !important;
+    color: #1C1917 !important;
+    background: #FFFFFF !important;
+}
+.stDownloadButton > button {
+    background: #1C1917 !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+/* ── Responsive móvil ────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
         flex: none !important;
         min-width: 100% !important;
     }
-    .kpi-value { font-size: 1.4rem; }
+    .kpi-value  { font-size: 1.4rem; }
+    .ddb-title  { font-size: 1.2rem; }
+    .ddb-badge  { display: none; }
 }
 
-/* Sidebar */
-[data-testid="stSidebar"] { background-color: #0f172a; }
-[data-testid="stSidebar"] * { color: #cbd5e1 !important; }
-
-/* Botones */
-.stButton > button {
-    border-radius: 8px;
-    font-weight: 600;
-}
-
-/* Ocultar menú hamburguesa y footer de Streamlit */
-#MainMenu, footer { visibility: hidden; }
+/* ── Ocultar elementos de Streamlit ──────────────────────────────────────── */
+#MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -473,37 +602,45 @@ def generar_excel_descarga(df: pd.DataFrame, original_bytes: bytes) -> bytes:
 # HELPERS DE FORMATO
 # ─────────────────────────────────────────────────────────────────────────────
 def _m(v: float) -> str:
-    """Formato moneda."""
     return f"${v:,.0f}"
 
-
 def _p(v: float) -> str:
-    """Formato porcentaje."""
     return f"{v:.1f}%"
 
+_PLOT_LAYOUT = dict(
+    paper_bgcolor="#FFFFFF",
+    plot_bgcolor="#FFFFFF",
+    font=dict(family="Inter, Arial, sans-serif", color="#1C1917", size=12),
+    margin=dict(l=0, r=0, t=10, b=0),
+    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+    xaxis=dict(showgrid=True, gridcolor="#F5F5F4", zeroline=False,
+               tickfont=dict(size=11, color="#78716C")),
+    yaxis=dict(showgrid=True, gridcolor="#F5F5F4", zeroline=False,
+               tickfont=dict(size=11, color="#78716C")),
+)
 
-def _kpi(col, label: str, valor: str, delta: str = "", pos: bool = True):
-    cls   = "kpi-delta-pos" if pos else "kpi-delta-neg"
-    extra = f'<div class="{cls}">{delta}</div>' if delta else ""
+def _kpi(col, label: str, valor: str, badge_txt: str = "", badge_cls: str = "badge-neutral"):
     col.markdown(
         f'<div class="kpi-card">'
         f'<div class="kpi-label">{label}</div>'
         f'<div class="kpi-value">{valor}</div>'
-        f'{extra}'
+        f'<span class="kpi-badge {badge_cls}">{badge_txt}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
-
 def _semaforo(label: str, real: float, meta: float, fmt=_m):
     pct = (real / meta * 100) if meta else 0
-    ok  = real >= meta
-    css = "semaforo-verde" if ok else "semaforo-rojo"
-    ico = "🟢" if ok else "🔴"
+    if pct >= 100:
+        css, ico = "sem-verde", "✅"
+    elif pct >= 85:
+        css, ico = "sem-amber", "⚠️"
+    else:
+        css, ico = "sem-rojo",  "🔴"
     st.markdown(
-        f'<div class="{css}"><b>{ico} {label}</b><br>'
-        f'Real: <b>{fmt(real)}</b> &nbsp;|&nbsp; Meta: {fmt(meta)} '
-        f'&nbsp;|&nbsp; Cumplimiento: <b>{pct:.1f}%</b></div>',
+        f'<div class="{css}"><b>{ico} {label}</b>&nbsp;&nbsp;'
+        f'Real: <b>{fmt(real)}</b> &nbsp;·&nbsp; Meta: {fmt(meta)} '
+        f'&nbsp;·&nbsp; Cumplimiento: <b>{pct:.1f}%</b></div>',
         unsafe_allow_html=True,
     )
 
@@ -512,31 +649,27 @@ def _semaforo(label: str, real: float, meta: float, fmt=_m):
 # RENDERIZADO DEL DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 def render_dashboard(df: pd.DataFrame):
+
     # ── Sidebar de filtros ─────────────────────────────────────────────────
     with st.sidebar:
-        st.markdown("## 🔎 Filtros")
-
-        tipos = ["Todos"] + sorted(df["tipo"].replace("","—").dropna().unique().tolist())
-        sel_tipo = st.selectbox("Tipo", tipos)
-
-        ciudades = ["Todas"] + sorted(df["ciudad"].replace("","—").dropna().unique().tolist())
-        sel_ciudad = st.selectbox("Ciudad", ciudades)
-
-        deptos = ["Todos"] + sorted(
-            [d for d in df["departamento_limpio"].dropna().unique() if d]
+        st.markdown(
+            "<div style='font-family:Georgia,serif;font-size:1rem;"
+            "font-weight:700;color:#1C1917;margin-bottom:1rem'>🔎 Filtros</div>",
+            unsafe_allow_html=True,
         )
-        sel_depto = st.selectbox("Departamento", deptos)
+        tipos     = ["Todos"] + sorted(df["tipo"].replace("","—").dropna().unique().tolist())
+        ciudades  = ["Todas"] + sorted(df["ciudad"].replace("","—").dropna().unique().tolist())
+        deptos    = ["Todos"] + sorted([d for d in df["departamento_limpio"].dropna().unique() if d])
+        clientes  = ["Todos"] + sorted([c for c in df["cliente"].dropna().unique() if c])
 
-        clientes = ["Todos"] + sorted(
-            [c for c in df["cliente"].dropna().unique() if c]
-        )
-        sel_cliente = st.selectbox("Cliente", clientes)
+        sel_tipo    = st.selectbox("Tipo",         tipos)
+        sel_ciudad  = st.selectbox("Ciudad",       ciudades)
+        sel_depto   = st.selectbox("Departamento", deptos)
+        sel_cliente = st.selectbox("Cliente",      clientes)
 
-        # Rango de fechas
         df["_fecha_dt"] = pd.to_datetime(df["fecha"], errors="coerce")
         f_min = df["_fecha_dt"].min()
         f_max = df["_fecha_dt"].max()
-
         if pd.notna(f_min) and pd.notna(f_max):
             desde = st.date_input("Desde", value=f_min.date(),
                                   min_value=f_min.date(), max_value=f_max.date())
@@ -546,7 +679,7 @@ def render_dashboard(df: pd.DataFrame):
             desde = hasta = None
 
         st.markdown("---")
-        if st.button("🔓 Cerrar sesión", use_container_width=True):
+        if st.button("Cerrar sesión", use_container_width=True):
             for k in ("autenticado", "df", "excel_bytes", "nombre_archivo"):
                 st.session_state.pop(k, None)
             st.rerun()
@@ -563,160 +696,246 @@ def render_dashboard(df: pd.DataFrame):
             (fdf["_fecha_dt"].dt.date <= hasta)
         ]
 
-    n_filas = len(fdf)
-    if n_filas == 0:
+    if len(fdf) == 0:
         st.warning("No hay datos para los filtros seleccionados.")
         return
 
-    # ── KPIs globales ──────────────────────────────────────────────────────
-    ventas  = fdf["total_venta_real"].sum()
-    costos  = fdf["costos"].sum()
-    margen  = ventas - costos
-    rentab  = (margen / ventas * 100) if ventas else 0.0
-
+    # ── HEADER ────────────────────────────────────────────────────────────
     st.markdown(
-        f'<div class="section-title">📈 KPIs Ejecutivos '
-        f'<span style="font-size:0.75rem;color:#64748b;font-weight:400">'
-        f'({n_filas:,} registros filtrados)</span></div>',
+        '<div class="ddb-header">'
+        '<div class="ddb-logo">'
+        '<svg viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<text x="3" y="20" font-family="Georgia,serif" font-size="16" '
+        'font-weight="700" fill="#EAB308">PD</text></svg>'
+        '</div>'
+        '<div>'
+        '<div class="ddb-title">Ventas &amp; Costos</div>'
+        '<div class="ddb-sub">Paradais DDB · Dashboard Ejecutivo</div>'
+        '</div>'
+        '<div class="ddb-badge">🟢 Conectado al Excel en Vivo</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    ventas = fdf["total_venta_real"].sum()
+    costos = fdf["costos"].sum()
+    margen = ventas - costos
+    rentab = (margen / ventas * 100) if ventas else 0.0
+
     k1, k2, k3, k4 = st.columns(4)
-    _kpi(k1, "Ventas Totales",   _m(ventas),  pos=True)
-    _kpi(k2, "Costos Totales",   _m(costos),  pos=False)
-    _kpi(k3, "Margen Bruto",     _m(margen),  pos=margen >= 0)
-    _kpi(k4, "% Rentabilidad",   _p(rentab),  pos=rentab >= 30)
+
+    _kpi(k1, "Ventas Totales", _m(ventas),
+         "Ingresos consolidados", "badge-neutral")
+    _kpi(k2, "Costos Totales", _m(costos),
+         "Estructura de costos", "badge-neutral")
+
+    if margen >= 0:
+        _kpi(k3, "Utilidad Bruta", _m(margen), "Saludable ✓", "badge-green")
+    else:
+        _kpi(k3, "Utilidad Bruta", _m(margen), "En riesgo", "badge-red")
+
+    if rentab >= 30:
+        _kpi(k4, "% Rentabilidad", _p(rentab), "Óptimo ✓", "badge-green")
+    elif rentab >= 15:
+        _kpi(k4, "% Rentabilidad", _p(rentab), "En alerta", "badge-amber")
+    else:
+        _kpi(k4, "% Rentabilidad", _p(rentab), "Crítico", "badge-red")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Separación Banco del Pacífico / Resto ──────────────────────────────
-    mask_bp = fdf["cliente"].str.upper().str.strip().str.contains(
-        r"BANCO.*PAC[IÍ]FICO|PAC[IÍ]FICO.*BANCO", regex=True, na=False
-    )
-    df_bp   = fdf[mask_bp]
-    df_rest = fdf[~mask_bp]
+    # ══════════════════════════════════════════════════════════════════════
+    # FILA DE GRÁFICOS CENTRALES
+    # ══════════════════════════════════════════════════════════════════════
+    col_izq, col_der = st.columns([1.1, 0.9])
 
-    col_bp, col_rest = st.columns(2)
-
-    # ── Banco del Pacífico ─────────────────────────────────────────────────
-    with col_bp:
-        st.markdown('<div class="section-title">🏦 Banco del Pacífico</div>',
+    # ── A. Tendencia Mensual: Ventas / Costos / Margen (Spline) ──────────
+    with col_izq:
+        st.markdown('<div class="section-title">📈 Tendencia Mensual · Ventas vs Costos vs Margen</div>',
                     unsafe_allow_html=True)
-
-        v_bp = df_bp["total_venta_real"].sum()
-        c_bp = df_bp["costos"].sum()
-        m_bp = v_bp - c_bp
-        r_bp = (m_bp / v_bp * 100) if v_bp else 0.0
-
-        b1, b2 = st.columns(2)
-        b1.metric("Ventas",       _m(v_bp))
-        b2.metric("Costos",       _m(c_bp))
-        b3, b4 = st.columns(2)
-        b3.metric("Margen",       _m(m_bp))
-        b4.metric("Rentabilidad", _p(r_bp))
-
-        if v_bp > 0:
-            st.markdown("**Semáforos**")
-            _semaforo("Ventas BP",  v_bp, v_bp * 0.90)
-            _semaforo("Margen BP",  m_bp, m_bp * 0.85 if m_bp > 0 else 1.0)
-        else:
-            st.info("Sin datos de Banco del Pacífico en la selección actual.")
-
-    # ── Resto de Clientes ──────────────────────────────────────────────────
-    with col_rest:
-        st.markdown('<div class="section-title">👥 Resto de Clientes</div>',
-                    unsafe_allow_html=True)
-
-        v_r = df_rest["total_venta_real"].sum()
-        c_r = df_rest["costos"].sum()
-        m_r = v_r - c_r
-        r_r = (m_r / v_r * 100) if v_r else 0.0
-
-        r1, r2 = st.columns(2)
-        r1.metric("Ventas",       _m(v_r))
-        r2.metric("Costos",       _m(c_r))
-        r3, r4 = st.columns(2)
-        r3.metric("Margen",       _m(m_r))
-        r4.metric("Rentabilidad", _p(r_r))
-
-        # Top 5 clientes con semáforo
-        top5 = (
-            df_rest.groupby("cliente")["total_venta_real"]
-            .sum().sort_values(ascending=False).head(5)
+        df_mes = (
+            fdf.groupby("mes").agg(
+                Ventas=("total_venta_real", "sum"),
+                Costos=("costos", "sum"),
+            ).reset_index()
         )
-        if not top5.empty:
-            st.markdown("**Top 5 Clientes**")
-            for cli, val in top5.items():
-                pct_c = val / v_r * 100 if v_r else 0
-                css   = "semaforo-verde" if pct_c >= 5 else "semaforo-rojo"
-                st.markdown(
-                    f'<div class="{css}">{cli}: <b>{_m(val)}</b> ({pct_c:.1f}%)</div>',
-                    unsafe_allow_html=True,
-                )
+        df_mes["Margen"] = df_mes["Ventas"] - df_mes["Costos"]
+        df_mes["_ord"]   = df_mes["mes"].map(MES_NUM).fillna(99)
+        df_mes = df_mes.sort_values("_ord")
 
-    # ── Gráficos ───────────────────────────────────────────────────────────
-    st.markdown("---")
-    gc1, gc2 = st.columns(2)
+        if not df_mes.empty:
+            fig_a = go.Figure()
+            # Ventas — línea dorada con área suave
+            fig_a.add_trace(go.Scatter(
+                x=df_mes["mes"], y=df_mes["Ventas"],
+                name="Ventas", mode="lines+markers",
+                line=dict(color="#EAB308", width=2.5, shape="spline"),
+                marker=dict(size=6),
+                fill="tozeroy",
+                fillcolor="rgba(234,179,8,0.05)",
+            ))
+            # Costos — gris oscuro
+            fig_a.add_trace(go.Scatter(
+                x=df_mes["mes"], y=df_mes["Costos"],
+                name="Costos", mode="lines+markers",
+                line=dict(color="#475569", width=2, shape="spline"),
+                marker=dict(size=5),
+            ))
+            # Margen — verde esmeralda discontinuo
+            fig_a.add_trace(go.Scatter(
+                x=df_mes["mes"], y=df_mes["Margen"],
+                name="Margen Neto", mode="lines+markers",
+                line=dict(color="#10B981", width=2, dash="dot", shape="spline"),
+                marker=dict(size=5),
+            ))
+            fig_a.update_layout(
+                **_PLOT_LAYOUT,
+                height=320,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                            xanchor="right", x=1, font=dict(size=11)),
+            )
+            fig_a.update_yaxes(tickprefix="$", tickformat=",.0f")
+            st.plotly_chart(fig_a, use_container_width=True)
 
-    with gc1:
-        st.markdown('<div class="section-title">📊 Ventas por Departamento</div>',
+    # ── B. Dona — Distribución por Departamento con total al centro ───────
+    with col_der:
+        st.markdown('<div class="section-title">🍩 Participación por Departamento</div>',
                     unsafe_allow_html=True)
         df_dept = (
             fdf.groupby("departamento_limpio")["total_venta_real"]
             .sum().reset_index()
             .rename(columns={"departamento_limpio": "Departamento",
                              "total_venta_real":    "Ventas"})
-            .sort_values("Ventas", ascending=True)
+            .sort_values("Ventas", ascending=False)
         )
+        df_dept = df_dept[df_dept["Ventas"] > 0]
+
         if not df_dept.empty:
-            fig = px.bar(
-                df_dept, x="Ventas", y="Departamento", orientation="h",
-                template="plotly_dark", color_discrete_sequence=["#38bdf8"],
-                text_auto=".3s",
+            _DONUT_COLORS = [
+                "#EAB308","#1C1917","#10B981","#475569",
+                "#F59E0B","#DC2626","#6366F1","#0EA5E9",
+            ]
+            total_str = _m(ventas)
+            fig_b = go.Figure(go.Pie(
+                labels=df_dept["Departamento"],
+                values=df_dept["Ventas"],
+                hole=0.62,
+                textinfo="percent",
+                textfont=dict(size=11, color="#1C1917"),
+                marker=dict(colors=_DONUT_COLORS[:len(df_dept)],
+                            line=dict(color="#FFFFFF", width=2)),
+                hovertemplate="<b>%{label}</b><br>%{value:$,.0f}<br>%{percent}<extra></extra>",
+            ))
+            fig_b.update_layout(
+                **{k: v for k, v in _PLOT_LAYOUT.items() if k not in ("xaxis","yaxis")},
+                height=320,
+                annotations=[dict(
+                    text=f"<b>{total_str}</b>",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=17, color="#1C1917",
+                              family="Georgia, 'Times New Roman', serif"),
+                    xref="paper", yref="paper",
+                )],
+                legend=dict(orientation="v", font=dict(size=10),
+                            x=1.02, y=0.5, yanchor="middle"),
+                showlegend=True,
             )
-            fig.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=320,
-                              xaxis_title="", yaxis_title="",
-                              plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig_b, use_container_width=True)
 
-    with gc2:
-        st.markdown('<div class="section-title">📅 Evolución Mensual de Ventas</div>',
-                    unsafe_allow_html=True)
-        df_mes = (
-            fdf.groupby("mes")["total_venta_real"]
-            .sum().reset_index()
-            .rename(columns={"mes":"Mes","total_venta_real":"Ventas"})
-        )
-        df_mes["_ord"] = df_mes["Mes"].map(MES_NUM).fillna(99)
-        df_mes = df_mes.sort_values("_ord")
-        if not df_mes.empty:
-            fig2 = px.area(
-                df_mes, x="Mes", y="Ventas", markers=True,
-                template="plotly_dark", color_discrete_sequence=["#818cf8"],
-            )
-            fig2.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=320,
-                               xaxis_title="", yaxis_title="",
-                               plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
-            st.plotly_chart(fig2, use_container_width=True)
-
-    # Gráfico empresa
-    st.markdown('<div class="section-title">🏢 Distribución por Empresa</div>',
-                unsafe_allow_html=True)
-    df_emp = (
-        fdf.groupby("empresa")["total_venta_real"]
-        .sum().reset_index()
-        .rename(columns={"empresa":"Empresa","total_venta_real":"Ventas"})
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN INFERIOR — BP + Barras horizontales top 10
+    # ══════════════════════════════════════════════════════════════════════
+    mask_bp = fdf["cliente"].str.upper().str.strip().str.contains(
+        r"BANCO.*PAC[IÍ]FICO|PAC[IÍ]FICO.*BANCO", regex=True, na=False
     )
-    if not df_emp.empty:
-        fig3 = px.pie(
-            df_emp, names="Empresa", values="Ventas",
-            template="plotly_dark", hole=0.4,
-            color_discrete_sequence=px.colors.sequential.Blues_r,
+    df_bp   = fdf[mask_bp]
+    df_rest = fdf[~mask_bp]
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    bot_izq, bot_der = st.columns([0.9, 1.1])
+
+    # ── Bloque Banco del Pacífico ──────────────────────────────────────────
+    with bot_izq:
+        v_bp = df_bp["total_venta_real"].sum()
+        c_bp = df_bp["costos"].sum()
+        m_bp = v_bp - c_bp
+        r_bp = (m_bp / v_bp * 100) if v_bp else 0.0
+
+        st.markdown(
+            '<div class="bp-block">'
+            '<div class="bp-block-title">🏦 Banco del Pacífico</div>',
+            unsafe_allow_html=True,
         )
-        fig3.update_layout(margin=dict(l=0,r=0,t=20,b=0), height=300,
-                           plot_bgcolor="#0f172a", paper_bgcolor="#0f172a")
-        st.plotly_chart(fig3, use_container_width=True)
+        mb1, mb2 = st.columns(2)
+        mb1.metric("Ventas",       _m(v_bp))
+        mb2.metric("Costos",       _m(c_bp))
+        mb3, mb4 = st.columns(2)
+        mb3.metric("Utilidad",     _m(m_bp))
+        mb4.metric("Rentabilidad", _p(r_bp))
+
+        if v_bp > 0:
+            st.markdown(
+                "<div style='font-size:0.78rem;font-weight:700;"
+                "color:#78716C;margin:0.8rem 0 0.4rem 0;"
+                "text-transform:uppercase;letter-spacing:0.06em'>"
+                "Semáforos de cumplimiento</div>",
+                unsafe_allow_html=True,
+            )
+            _semaforo("Ventas BP",  v_bp, v_bp * 0.90)
+            _semaforo("Margen BP",  m_bp, m_bp * 0.85 if m_bp > 0 else 1.0)
+        else:
+            st.info("Sin datos de Banco del Pacífico.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── C. Barras horizontales Top 10 (sin BP) ─────────────────────────────
+    with bot_der:
+        st.markdown(
+            '<div class="section-title">📊 Top 10 Clientes · Resto de Agencia '
+            '<span style="font-size:0.72rem;font-weight:400;color:#78716C">'
+            '(excl. Banco del Pacífico)</span></div>',
+            unsafe_allow_html=True,
+        )
+        v_r = df_rest["total_venta_real"].sum()
+        top10 = (
+            df_rest.groupby("cliente")["total_venta_real"]
+            .sum().sort_values(ascending=False).head(10).reset_index()
+        )
+        top10.columns = ["Cliente", "Ventas"]
+        top10 = top10.sort_values("Ventas", ascending=True)  # plotly invierte
+
+        if not top10.empty:
+            # Semáforo por participación relativa
+            def _bar_color(v):
+                pct = (v / v_r * 100) if v_r else 0
+                if pct >= 15: return "#10B981"
+                if pct >= 8:  return "#F59E0B"
+                return "#DC2626"
+
+            colors = [_bar_color(v) for v in top10["Ventas"]]
+
+            fig_c = go.Figure(go.Bar(
+                x=top10["Ventas"],
+                y=top10["Cliente"],
+                orientation="h",
+                marker=dict(color=colors, line=dict(color="rgba(0,0,0,0)")),
+                text=[_m(v) for v in top10["Ventas"]],
+                textposition="outside",
+                textfont=dict(size=10, color="#1C1917"),
+                hovertemplate="<b>%{y}</b><br>%{x:$,.0f}<extra></extra>",
+            ))
+            fig_c.update_layout(
+                **_PLOT_LAYOUT,
+                height=max(280, len(top10) * 34),
+                yaxis=dict(tickfont=dict(size=10, color="#1C1917"),
+                           showgrid=False, zeroline=False),
+                xaxis=dict(tickprefix="$", tickformat=",.0f",
+                           showgrid=True, gridcolor="#F5F5F4"),
+            )
+            st.plotly_chart(fig_c, use_container_width=True)
 
     # ── Tabla detalle (expandible) ─────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
     with st.expander("📋 Ver datos filtrados", expanded=False):
         cols_vis = [c for c in EXPORT_COLS if c in fdf.columns]
         df_vis   = fdf[cols_vis].copy()
