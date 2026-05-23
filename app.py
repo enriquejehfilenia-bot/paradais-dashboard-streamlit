@@ -1018,73 +1018,71 @@ def render_dashboard(df: pd.DataFrame):
         mask_bp |
         fdf["tipo"].astype(str).str.strip().str.upper().isin(_TIPOS_EXCL)
     )
-    df_bp   = fdf[mask_bp]
-    df_rest = fdf[~mask_excl]
+    df_excl = fdf[mask_excl]   # BP + Públicos + Relacionados
+    df_rest = fdf[~mask_excl]  # Solo privados para el ranking
 
     st.markdown("<br>", unsafe_allow_html=True)
     bot_izq, bot_der = st.columns([0.9, 1.1])
 
-    # ── Bloque Banco del Pacífico ──────────────────────────────────────────
+    # ── Bloque Cuentas Especiales (BP + Públicos + Relacionados) ──────────
     with bot_izq:
-        v_bp = df_bp["total_venta_real"].sum()
-        c_bp = df_bp["costos"].sum()
-        m_bp = v_bp - c_bp
-        r_bp = (m_bp / v_bp * 100) if v_bp else 0.0
-
         st.markdown(
             '<div class="bp-block">'
-            '<div class="bp-block-title">🏦 Banco del Pacífico</div>',
+            '<div class="bp-block-title">⭐ Cuentas Especiales</div>',
             unsafe_allow_html=True,
         )
-        mb1, mb2 = st.columns(2)
-        mb1.metric("Ventas",       _m(v_bp))
-        mb2.metric("Costos",       _m(c_bp))
-        mb3, mb4 = st.columns(2)
-        mb3.metric("Utilidad",     _m(m_bp))
-        mb4.metric("Rentabilidad", _p(r_bp))
 
-        if v_bp > 0:
+        # Agrupar por cliente dentro del bloque excluido
+        resumen_excl = (
+            df_excl.groupby("cliente")
+            .agg(ventas=("total_venta_real","sum"), costos=("costos","sum"))
+            .reset_index()
+            .sort_values("ventas", ascending=False)
+        )
+
+        if resumen_excl.empty:
+            st.info("Sin datos en cuentas especiales.")
+        else:
             st.markdown(
-                "<div style='font-size:0.78rem;font-weight:700;"
-                "color:#78716C;margin:0.8rem 0 0.4rem 0;"
-                "text-transform:uppercase;letter-spacing:0.06em'>"
-                "Semáforos de cumplimiento</div>",
+                "<div style='font-size:0.78rem;font-weight:700;color:#78716C;"
+                "text-transform:uppercase;letter-spacing:0.06em;"
+                "margin-bottom:0.5rem'>Semáforos de cumplimiento</div>",
                 unsafe_allow_html=True,
             )
-            # Buscar meta de BP en proyecciones
-            _bp_key = next(
-                (k for k in proyecciones
-                 if "PACIFICO" in k.replace("Í","I").replace("í","I") or
-                    "BANCO DEL PAC" in k.replace("Í","I")),
-                None,
-            )
-            meta_v_bp = proyecciones.get(_bp_key, 0) if _bp_key else 0
-            meta_m_bp = meta_v_bp * 0.30 if meta_v_bp else 0   # 30% de margen esperado
+            for _, row in resumen_excl.iterrows():
+                cli      = row["cliente"]
+                v_cli    = row["ventas"]
+                m_cli    = v_cli - row["costos"]
+                cli_key  = cli.strip().upper()
 
-            if meta_v_bp:
-                _semaforo("Ventas BP",  v_bp, meta_v_bp)
-                if meta_m_bp:
-                    _semaforo("Margen BP",  m_bp, meta_m_bp)
-            else:
-                # Sin proyección → comparar contra sí mismo (siempre verde, informativo)
-                st.markdown(
-                    "<div style='font-size:0.75rem;color:#78716C;font-style:italic'>"
-                    "Sin datos de proyección en pestaña PROYECCION</div>",
-                    unsafe_allow_html=True,
+                # Buscar meta en proyecciones
+                meta_key = next(
+                    (k for k in proyecciones if cli_key in k or k in cli_key),
+                    None,
                 )
-                _semaforo("Ventas BP",  v_bp, v_bp)
-                _semaforo("Margen BP",  m_bp, m_bp if m_bp > 0 else 1.0)
-        else:
-            st.info("Sin datos de Banco del Pacífico.")
+                if meta_key:
+                    _semaforo(cli, v_cli, proyecciones[meta_key])
+                else:
+                    # Sin proyección: mostrar solo real
+                    pct_str = f"{(m_cli/v_cli*100):.1f}% margen" if v_cli else "—"
+                    st.markdown(
+                        f'<div class="sem-verde">'
+                        f'<b>— {cli}</b>&nbsp;&nbsp;'
+                        f'Real: <b>{_m(v_cli)}</b>'
+                        f'&nbsp;·&nbsp;{pct_str}'
+                        f'&nbsp;<span style="font-size:0.7rem;color:#A8A29E">'
+                        f'(sin proyección)</span></div>',
+                        unsafe_allow_html=True,
+                    )
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── C. Barras horizontales Top 10 (sin BP) ─────────────────────────────
+    # ── C. Barras horizontales Top 10 clientes privados ───────────────────
     with bot_der:
         st.markdown(
-            '<div class="section-title">📊 Top 10 Clientes · Resto de Agencia '
+            '<div class="section-title">📊 Top 10 Clientes Privados '
             '<span style="font-size:0.72rem;font-weight:400;color:#78716C">'
-            '(excl. Banco del Pacífico)</span></div>',
+            '(excl. cuentas especiales)</span></div>',
             unsafe_allow_html=True,
         )
         v_r = df_rest["total_venta_real"].sum()
