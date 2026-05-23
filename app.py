@@ -287,6 +287,36 @@ ul[data-testid="stSelectboxVirtualDropdown"] li {
     .ddb-badge  { display: none; }
 }
 
+/* ── Date input — mismo estilo que selectbox ────────────────────────────── */
+[data-testid="stDateInput"] input,
+[data-testid="stDateInput"] > div > div,
+[data-baseweb="input"] input,
+[data-baseweb="calendar"] {
+    background-color: #FFFFFF !important;
+    color: #1C1917 !important;
+    border-color: #E7E5E4 !important;
+}
+[data-baseweb="input"] {
+    background-color: #FFFFFF !important;
+    border-color: #E7E5E4 !important;
+}
+[data-baseweb="input"] > div {
+    background-color: #FFFFFF !important;
+}
+[data-baseweb="input"] input {
+    color: #1C1917 !important;
+    background-color: #FFFFFF !important;
+}
+/* Calendario popup */
+[data-baseweb="calendar"] * {
+    background-color: #FFFFFF !important;
+    color: #1C1917 !important;
+}
+[data-baseweb="calendar"] [aria-selected="true"] {
+    background-color: #EAB308 !important;
+    color: #FFFFFF !important;
+}
+
 /* ── Ocultar elementos de Streamlit ──────────────────────────────────────── */
 #MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; }
 </style>
