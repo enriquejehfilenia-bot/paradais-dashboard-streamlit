@@ -338,47 +338,60 @@ st.markdown("""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AUTENTICACIÓN — contraseña hash SHA-256 desde st.secrets
+# DATA STORE COMPARTIDO — persiste entre sesiones en el mismo servidor
 # ─────────────────────────────────────────────────────────────────────────────
-_MAX_INTENTOS  = 5
-_BLOQUEO_SEGS  = 300   # 5 minutos
+@st.cache_resource
+def _get_shared_store() -> dict:
+    """Singleton compartido entre TODAS las sesiones. Admin actualiza, usuarios leen."""
+    return {"df": None, "excel_bytes": None, "nombre_archivo": None, "proyecciones": {}}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTENTICACIÓN — dos roles: admin y usuario
+# Secrets requeridos:
+#   [auth]
+#   password_hash       = "hash SHA-256 contraseña usuarios"
+#   admin_password_hash = "hash SHA-256 contraseña admin"
+# ─────────────────────────────────────────────────────────────────────────────
+_MAX_INTENTOS = 5
+_BLOQUEO_SEGS = 300   # 5 minutos
 
 
 def _sha256(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
-def _hash_esperado() -> str:
-    """
-    Lee el hash SHA-256 desde st.secrets['auth']['password_hash'].
-    NUNCA se define una contraseña por defecto en el código.
-    Si el secret no existe, la app se detiene con un mensaje de configuración.
-    """
+def _hashes_auth() -> tuple:
+    """Retorna (hash_usuario, hash_admin). Detiene la app si no están configurados."""
     try:
-        h = st.secrets["auth"]["password_hash"]
-        if not h or len(h) != 64:
-            raise ValueError("Hash inválido")
-        return h
+        h_user  = st.secrets["auth"]["password_hash"]
+        h_admin = st.secrets["auth"].get("admin_password_hash", "")
+        if not h_user or len(h_user) != 64:
+            raise ValueError("password_hash inválido")
+        return h_user, h_admin
     except Exception:
         st.error(
             "⚙️ **Configuración requerida:** "
-            "El administrador debe configurar `[auth] password_hash` en los Secrets de esta app."
+            "Configura `[auth] password_hash` y `admin_password_hash` en los Secrets."
         )
         st.stop()
 
 
 def pantalla_login() -> bool:
-    """Muestra la pantalla de login. Retorna True solo cuando el usuario está autenticado."""
+    """
+    Muestra login. Retorna True si autenticado.
+    Guarda st.session_state['rol'] = 'admin' | 'usuario'.
+    """
     if st.session_state.get("autenticado"):
         return True
 
-    ahora = time.time()
-    intentos      = st.session_state.get("_intentos", 0)
+    ahora           = time.time()
+    intentos        = st.session_state.get("_intentos", 0)
     bloqueado_hasta = st.session_state.get("_bloqueado_hasta", 0)
 
     if ahora < bloqueado_hasta:
         restante = int(bloqueado_hasta - ahora)
-        st.error(f"🔒 Demasiados intentos fallidos. Intenta de nuevo en {restante} segundos.")
+        st.error(f"🔒 Demasiados intentos. Intenta de nuevo en {restante} segundos.")
         st.stop()
 
     _, col_c, _ = st.columns([1, 1.6, 1])
@@ -394,11 +407,20 @@ def pantalla_login() -> bool:
         with st.form("login", clear_on_submit=True):
             pwd = st.text_input("Contraseña", type="password", placeholder="••••••••",
                                 label_visibility="collapsed")
-            ok = st.form_submit_button("Ingresar →", use_container_width=True, type="primary")
+            ok  = st.form_submit_button("Ingresar →", use_container_width=True, type="primary")
 
         if ok:
-            if _sha256(pwd) == _hash_esperado():
+            h_user, h_admin = _hashes_auth()
+            ingresado = _sha256(pwd)
+
+            if h_admin and ingresado == h_admin:
                 st.session_state["autenticado"] = True
+                st.session_state["rol"]         = "admin"
+                st.session_state["_intentos"]   = 0
+                st.rerun()
+            elif ingresado == h_user:
+                st.session_state["autenticado"] = True
+                st.session_state["rol"]         = "usuario"
                 st.session_state["_intentos"]   = 0
                 st.rerun()
             else:
@@ -1182,37 +1204,90 @@ def main():
     if not pantalla_login():
         st.stop()
 
-    st.markdown(
-        "<h2 style='color:#e2e8f0;margin-bottom:0'>📊 Paradais DDB · Dashboard Ejecutivo</h2>"
-        "<p style='color:#94a3b8;margin-top:0.2rem'>Carga tu archivo Excel para visualizar los datos financieros.</p>",
-        unsafe_allow_html=True,
-    )
+    store = _get_shared_store()
+    rol   = st.session_state.get("rol", "usuario")
+
+    # ── CABECERA ───────────────────────────────────────────────────────────
+    if rol == "admin":
+        st.markdown(
+            "<h2 style='color:#e2e8f0;margin-bottom:0'>📊 Paradais DDB · Panel Admin</h2>"
+            "<p style='color:#EAB308;margin-top:0.2rem;font-size:0.85rem'>"
+            "🔑 Sesión de administrador — puedes actualizar el archivo de datos</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<h2 style='color:#e2e8f0;margin-bottom:0'>📊 Paradais DDB · Dashboard Ejecutivo</h2>"
+            "<p style='color:#94a3b8;margin-top:0.2rem'>Datos actualizados por el administrador.</p>",
+            unsafe_allow_html=True,
+        )
     st.markdown("---")
 
-    # ── Si ya hay datos en sesión → mostrar dashboard ──────────────────────
-    if st.session_state.get("df") is not None:
-        df = st.session_state["df"]
+    # ── USUARIOS: solo ven el dashboard con la data compartida ────────────
+    if rol == "usuario":
+        if store["df"] is None:
+            st.info("📭 El administrador aún no ha cargado ningún archivo. Vuelve más tarde.")
+            if st.button("🚪 Cerrar sesión"):
+                st.session_state.clear()
+                st.rerun()
+            return
 
-        col_dl, col_nuevo, _ = st.columns([2, 2, 4])
+        # Botón de descarga + cerrar sesión
+        col_dl, _, col_out = st.columns([2, 4, 1])
         with col_dl:
             st.download_button(
                 label="⬇️  Descargar Excel Limpio",
-                data=st.session_state["excel_bytes"],
-                file_name=f"DATA_LIMPIA_{st.session_state.get('nombre_archivo','export')}.xlsx",
+                data=store["excel_bytes"],
+                file_name=f"DATA_LIMPIA_{store.get('nombre_archivo','export')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with col_out:
+            if st.button("🚪 Salir", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+
+        # Sincronizar proyecciones del store a session_state para render_dashboard
+        st.session_state["proyecciones"] = store["proyecciones"]
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_dashboard(store["df"])
+        return
+
+    # ── ADMIN: puede subir nuevo archivo ──────────────────────────────────
+    # Mostrar dashboard si ya hay datos cargados
+    if store["df"] is not None:
+        col_dl, col_nuevo, _, col_out = st.columns([2, 2, 3, 1])
+        with col_dl:
+            st.download_button(
+                label="⬇️  Descargar Excel Limpio",
+                data=store["excel_bytes"],
+                file_name=f"DATA_LIMPIA_{store.get('nombre_archivo','export')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
         with col_nuevo:
-            if st.button("📂 Cargar nuevo archivo", use_container_width=True):
-                for k in ("df", "excel_bytes", "nombre_archivo"):
-                    st.session_state.pop(k, None)
+            if st.button("📂 Actualizar archivo", use_container_width=True):
+                store["df"] = None
+                st.rerun()
+        with col_out:
+            if st.button("🚪 Salir", use_container_width=True):
+                st.session_state.clear()
                 st.rerun()
 
+        st.session_state["proyecciones"] = store["proyecciones"]
         st.markdown("<br>", unsafe_allow_html=True)
-        render_dashboard(df)
+        render_dashboard(store["df"])
         return
 
-    # ── Carga de archivo ───────────────────────────────────────────────────
+    # Admin sin datos → mostrar uploader
+    st.markdown(
+        "<div style='background:#1C1917;border:1px solid #EAB308;border-radius:12px;"
+        "padding:1.2rem 1.5rem;margin-bottom:1rem'>"
+        "<b style='color:#EAB308'>📤 Subir archivo de datos</b>"
+        "<p style='color:#A8A29E;font-size:0.85rem;margin:0.4rem 0 0 0'>"
+        "El archivo procesado quedará disponible para todos los usuarios.</p></div>",
+        unsafe_allow_html=True,
+    )
     subido = st.file_uploader(
         "Selecciona el archivo Excel de ventas",
         type=["xlsx", "xlsm"],
@@ -1257,19 +1332,18 @@ def main():
             excel_bytes  = generar_excel_descarga(df, contenido)
             proyecciones = parsear_proyeccion(contenido)
 
-            # Guardar SOLO en st.session_state (RAM volátil de la sesión)
-            # Nunca se escribe en disco.
-            st.session_state["df"]             = df
-            st.session_state["excel_bytes"]    = excel_bytes
-            st.session_state["nombre_archivo"] = subido.name.rsplit(".", 1)[0]
-            st.session_state["proyecciones"]   = proyecciones
+            # Guardar en el DataStore COMPARTIDO (visible para todos los usuarios)
+            store["df"]             = df
+            store["excel_bytes"]    = excel_bytes
+            store["nombre_archivo"] = subido.name.rsplit(".", 1)[0]
+            store["proyecciones"]   = proyecciones
 
         except Exception:
             # No exponer trazas de error al usuario
             st.error("Error en el formato del archivo cargado.")
             return
 
-    st.success(f"✅  {len(df):,} registros procesados correctamente.")
+    st.success(f"✅  {len(df):,} registros procesados. El dashboard ya está disponible para todos los usuarios.")
     st.rerun()
 
 
