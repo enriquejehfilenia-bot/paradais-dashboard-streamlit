@@ -217,47 +217,45 @@ st.markdown("""
 [data-testid="stSidebar"] .stSelectbox label,
 [data-testid="stSidebar"] .stMultiSelect label { font-size: 0.8rem !important; }
 
-/* ── Selectbox / Multiselect — texto siempre visible ────────────────────── */
-/* Contenedor seleccionado */
-[data-baseweb="select"] > div:first-child,
-[data-baseweb="select"] [data-testid="stSelectboxVirtualDropdown"],
-[data-baseweb="select"] input,
-[data-baseweb="select"] span,
-[data-baseweb="select"] div[class*="ValueContainer"] > div,
-[data-baseweb="select"] div[class*="singleValue"],
-[data-baseweb="select"] div[class*="placeholder"] {
-    color: #1C1917 !important;
-    background-color: #FFFFFF !important;
-}
-/* Caja exterior del select */
+/* ── Selectbox / Multiselect — estilo oscuro uniforme ───────────────────── */
+/* Caja exterior */
 [data-baseweb="select"] > div {
-    background-color: #FFFFFF !important;
-    border-color: #E7E5E4 !important;
+    background-color: #1C1917 !important;
+    border-color: #3D3733 !important;
+    border-radius: 8px !important;
 }
+/* Texto del valor seleccionado y placeholder */
+[data-baseweb="select"] span,
+[data-baseweb="select"] div[class*="singleValue"],
+[data-baseweb="select"] div[class*="placeholder"],
+[data-baseweb="select"] input {
+    color: #F5F5F4 !important;
+}
+/* Icono de flecha */
+[data-baseweb="select"] svg { fill: #A8A29E !important; }
 /* Opciones del dropdown */
-[data-baseweb="popover"] li,
+[data-baseweb="popover"],
+[data-baseweb="menu"],
 [data-baseweb="menu"] li,
-[data-baseweb="menu"] [role="option"],
-ul[data-testid="stSelectboxVirtualDropdown"] li {
-    color: #1C1917 !important;
-    background-color: #FFFFFF !important;
+[data-baseweb="menu"] [role="option"] {
+    background-color: #1C1917 !important;
+    color: #F5F5F4 !important;
 }
 [data-baseweb="menu"] [role="option"]:hover,
 [data-baseweb="menu"] [aria-selected="true"] {
-    background-color: #FEF9EC !important;
-    color: #1C1917 !important;
+    background-color: #292524 !important;
+    color: #EAB308 !important;
 }
 /* Multiselect tags */
 [data-baseweb="tag"] {
-    background-color: #FEF3C7 !important;
-    color: #92400E !important;
+    background-color: #292524 !important;
+    color: #EAB308 !important;
 }
-[data-baseweb="tag"] span { color: #92400E !important; }
-/* Input dentro del multiselect */
-[data-baseweb="select"] input { color: #1C1917 !important; }
-/* Label general de widgets */
+[data-baseweb="tag"] span { color: #EAB308 !important; }
+/* Labels */
 .stSelectbox label, .stMultiSelect label,
-[data-testid="stWidgetLabel"] { color: #1C1917 !important; }
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] * { color: #78716C !important; }
 
 /* ── Botones ─────────────────────────────────────────────────────────────── */
 /* Botón normal (Cargar nuevo archivo) → oscuro/primario */
